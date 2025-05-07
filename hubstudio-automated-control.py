@@ -5,6 +5,7 @@ import time
 import traceback
 import random
 import json # 为 get_verification_code 添加
+import decimal
 
 import requests
 from selenium import webdriver
@@ -14,6 +15,10 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.chrome.service import Service
 
+from eth_account import Account
+from web3 import Web3
+from web3.exceptions import TransactionNotFound, ContractLogicError, TimeExhausted
+
 
 # --- 常量 (考虑将这些设为可配置项或参数) ---
 GET_CODE_API_URL_DEFAULT = "https://script.google.com/macros/s/AKfycbwNL63gEfe8QQQ5uEVNAc0PateTv8-ZTFGQ_oG3vT4nlTBLs9OOQ_7lnlwTGN6tE93x5g/exec"
@@ -21,6 +26,16 @@ GET_CODE_API_URL_DEFAULT = "https://script.google.com/macros/s/AKfycbwNL63gEfe8Q
 # 对于通用库，这应该是一个参数或以其他方式处理。
 DEFAULT_EXTENSION_PATH = r'C:\Users\Administrator\AppData\Roaming\hubstudio-client\UserExtension\nkbihfbeogaeaoehlefnkodbefgpgknn\11.7.4\nkbihfbeogaeaoehlefnkodbefgpgknn.crx'
 DEFAULT_CHROMEDRIVER_PATH = r'C:\windows\chromedriver.exe' # 同样是系统特定的
+
+# --- Constants (Consider making these configurable or parameters) ---
+GET_CODE_API_URL_DEFAULT = "https://script.google.com/macros/s/AKfycbwNL63gEfe8QQQ5uEVNAc0PateTv8-ZTFGQ_oG3vT4nlTBLs9OOQ_7lnlwTGN6tE93x5g/exec"
+DEFAULT_EXTENSION_PATH = r'C:\Users\Administrator\AppData\Roaming\hubstudio-client\UserExtension\nkbihfbeogaeaoehlefnkodbefgpgknn\11.7.4\nkbihfbeogaeaoehlefnkodbefgpgknn.crx'
+DEFAULT_CHROMEDRIVER_PATH = r'C:\windows\chromedriver.exe'
+
+# --- 新增：EVM 相关默认配置 (可以根据需要移到脚本开头或作为参数传入) ---
+DEFAULT_EVM_RPC_URL = 'https://sepolia.infura.io/v3/YOUR_INFURA_PROJECT_ID' # 请替换为你自己的 Infura Project ID 或其他 RPC
+DEFAULT_EVM_CHAIN_ID = 11155111 # Sepolia Chain ID, 更改 RPC 时记得同步修改
+DEFAULT_EVM_REQUEST_TIMEOUT_SECONDS = 30
 
 # --- 文件读取函数 ---
 def get_name_info_from_file(filepath='names.txt', delimiter='	'):
@@ -384,6 +399,88 @@ def get_verification_code_from_api(email, api_url=GET_CODE_API_URL_DEFAULT, time
     except Exception as e:
         print(f"获取 {email} 验证码时发生意外错误: {e}")
     return None
+
+# --- EVM Wallet 函数 ---
+def generate_evm_wallet():
+    """
+    生成一个新的 EVM 兼容钱包 (地址、私钥、助记词)。
+    启用 HD Wallet 功能以生成助记词。
+
+    Returns:
+        dict or None: 包含 'address', 'private_key', 'mnemonic' 的字典，
+                      如果发生错误则返回 None。
+    """
+    try:
+        Account.enable_unaudited_hdwallet_features()
+        acct, mnemonic = Account.create_with_mnemonic()
+        private_key = acct.key.hex() # 获取十六进制私钥字符串
+        wallet_info = {
+            'address': acct.address,
+            'private_key': private_key, # acct.key 是 bytes, private_key 是 hex string
+            'mnemonic': mnemonic
+        }
+        print(f"EVM Wallet Generated: Address - {acct.address}")
+        return wallet_info
+    except Exception as e:
+        print(f"Error generating EVM wallet: {e}")
+        traceback.print_exc()
+        return None
+
+def get_evm_balance(wallet_address, rpc_url=DEFAULT_EVM_RPC_URL, chain_id=DEFAULT_EVM_CHAIN_ID, request_timeout=DEFAULT_EVM_REQUEST_TIMEOUT_SECONDS):
+    """
+    查询指定 EVM 钱包地址的余额。
+
+    Args:
+        wallet_address (str): 要查询的钱包地址。
+        rpc_url (str): EVM 兼容网络的 RPC URL。
+        chain_id (int, optional): 链 ID，主要用于日志。
+        request_timeout (int, optional): Web3 请求的超时时间（秒）。
+
+    Returns:
+        dict: 包含 'balance_wei' (int), 'balance_eth' (str), 'error' (str or None) 的字典。
+              如果成功，'error' 为 None。
+    """
+    result = {'balance_wei': None, 'balance_eth': None, 'error': None}
+
+    if not wallet_address or not Web3.is_address(wallet_address):
+        result['error'] = f"Invalid wallet address provided: {wallet_address}"
+        print(result['error'])
+        return result
+
+    if not rpc_url:
+        result['error'] = "RPC URL not provided."
+        print(result['error'])
+        return result
+    
+    w3_instance = None
+    try:
+        w3_instance = Web3(Web3.HTTPProvider(rpc_url, request_kwargs={'timeout': request_timeout}))
+        if not w3_instance.is_connected():
+            result['error'] = f"Failed to connect to RPC node: {rpc_url}"
+            print(result['error'])
+            return result
+        
+        print(f"Successfully connected to {rpc_url} (Chain ID: {chain_id if chain_id else 'Unknown'}, Timeout: {request_timeout}s)")
+        
+        checksum_address = Web3.to_checksum_address(wallet_address)
+        balance_wei = w3_instance.eth.get_balance(checksum_address)
+        balance_eth = w3_instance.from_wei(balance_wei, 'ether')
+        
+        result['balance_wei'] = balance_wei
+        result['balance_eth'] = str(balance_eth) # 转换为字符串以保持一致性
+        print(f"Address: {checksum_address}, Balance: {balance_eth} ETH ({balance_wei} Wei)")
+        
+    except requests.exceptions.ReadTimeout:
+        error_msg = f"Timeout (> {request_timeout}s) while getting balance for {wallet_address} from {rpc_url}"
+        result['error'] = error_msg
+        print(error_msg)
+    except Exception as e:
+        error_msg = f"Error getting EVM balance for {wallet_address}: {e}"
+        result['error'] = error_msg
+        print(error_msg)
+        traceback.print_exc(limit=2)
+        
+    return result
 
 
 if __name__ == '__main__':
