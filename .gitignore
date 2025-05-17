@@ -1,0 +1,26 @@
+# .gitignore
+
+# Environments
+.env
+*.env.local
+*.env.*.local
+
+# Python
+*.pyc
+__pycache__/
+*.egg-info/
+dist/
+build/
+
+# IDE / Editor specific
+.vscode/
+.idea/
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# 如果你的服务账户json文件可能会被意外放到项目根目录且不想提交
+# (虽然推荐的做法是让用户自己管理此文件，并通过配置指定路径或文件名)
+# *.json # 如果你有很多不想提交的json，但要小心，这可能会排除 config.json
+# turnkey-banner-391102-08c5b5a176e3.json # 或者直接指定这个敏感文件名

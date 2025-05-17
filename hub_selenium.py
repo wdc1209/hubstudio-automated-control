@@ -4,8 +4,10 @@ import sys
 import time
 import traceback
 import random
-import json # 为 get_verification_code 添加
+import json as json_lib # 重命名以避免与 config_data 中的 json 混淆
 import decimal
+import os
+from dotenv import load_dotenv
 
 import requests
 from selenium import webdriver
@@ -20,37 +22,58 @@ from web3 import Web3
 from web3.exceptions import TransactionNotFound, ContractLogicError, TimeExhausted
 
 
-# --- 常量 (考虑将这些设为可配置项或参数) ---
-GET_CODE_API_URL_DEFAULT = "https://script.google.com/macros/s/AKfycbwNL63gEfe8QQQ5uEVNAc0PateTv8-ZTFGQ_oG3vT4nlTBLs9OOQ_7lnlwTGN6tE93x5g/exec"
-# 这个 EXTENSION_PATH 非常特定于你的设置。
-# 对于通用库，这应该是一个参数或以其他方式处理。
-DEFAULT_EXTENSION_PATH = r'C:\Users\Administrator\AppData\Roaming\hubstudio-client\UserExtension\nkbihfbeogaeaoehlefnkodbefgpgknn\11.7.4\nkbihfbeogaeaoehlefnkodbefgpgknn.crx'
-DEFAULT_CHROMEDRIVER_PATH = r'C:\windows\chromedriver.exe' # 同样是系统特定的
+# --- 加载配置 ---
+load_dotenv()
 
-# --- Constants (Consider making these configurable or parameters) ---
-GET_CODE_API_URL_DEFAULT = "https://script.google.com/macros/s/AKfycbwNL63gEfe8QQQ5uEVNAc0PateTv8-ZTFGQ_oG3vT4nlTBLs9OOQ_7lnlwTGN6tE93x5g/exec"
-DEFAULT_EXTENSION_PATH = r'C:\Users\Administrator\AppData\Roaming\hubstudio-client\UserExtension\nkbihfbeogaeaoehlefnkodbefgpgknn\11.7.4\nkbihfbeogaeaoehlefnkodbefgpgknn.crx'
-DEFAULT_CHROMEDRIVER_PATH = r'C:\windows\chromedriver.exe'
+CONFIG_FILE_PATH = os.path.join(os.path.dirname(__file__), 'config.json')
+config_data = {}
+try:
+    # 明确指定 UTF-8 编码
+    with open(CONFIG_FILE_PATH, 'r', encoding='utf-8') as f: 
+        config_data = json_lib.load(f)
+except FileNotFoundError:
+    print(f"警告 (hub_selenium.py): 库配置文件 'config.json' 未在路径 '{CONFIG_FILE_PATH}' 找到。")
+except json_lib.JSONDecodeError as e:
+    print(f"警告 (hub_selenium.py): 解析库配置文件 'config.json' 时发生错误: {e}。")
 
-# --- 新增：EVM 相关默认配置 (可以根据需要移到脚本开头或作为参数传入) ---
-DEFAULT_EVM_RPC_URL = 'https://sepolia.infura.io/v3/YOUR_INFURA_PROJECT_ID' # 请替换为你自己的 Infura Project ID 或其他 RPC
-DEFAULT_EVM_CHAIN_ID = 11155111 # Sepolia Chain ID, 更改 RPC 时记得同步修改
-DEFAULT_EVM_REQUEST_TIMEOUT_SECONDS = 30
+# --- 配置常量 (从 .env 和 config.json 读取) ---
+# HubStudio
+_hubstudio_config = config_data.get('HubStudio', {})
+DEFAULT_EXTENSION_PATH = _hubstudio_config.get('default_extension_path', r'C:\Default\Path\Not\Set\extension.crx')
+DEFAULT_CHROMEDRIVER_PATH = _hubstudio_config.get('default_chromedriver_path', r'C:\Default\Path\Not\Set\chromedriver.exe')
+HUBSTUDIO_BASE_URL = _hubstudio_config.get('base_api_url', "http://127.0.0.1:6873/api/v1")
+
+# EVM
+_evm_config = config_data.get('EVM', {})
+INFURA_PROJECT_ID = os.getenv('INFURA_PROJECT_ID', "YOUR_FALLBACK_INFURA_ID_IF_NOT_IN_ENV") # 从.env获取
+DEFAULT_EVM_RPC_URL_TEMPLATE = _evm_config.get('default_rpc_url_template', "https://sepolia.infura.io/v3/{INFURA_PROJECT_ID}")
+DEFAULT_EVM_RPC_URL = DEFAULT_EVM_RPC_URL_TEMPLATE.replace("{INFURA_PROJECT_ID}", INFURA_PROJECT_ID) # 动态构建
+DEFAULT_EVM_CHAIN_ID = _evm_config.get('default_chain_id', 11155111)
+DEFAULT_EVM_REQUEST_TIMEOUT_SECONDS = _evm_config.get('default_request_timeout_seconds', 30)
+
+# External APIs
+_external_apis_config = config_data.get('ExternalAPIs', {})
+GET_CODE_API_URL_DEFAULT = _external_apis_config.get('get_code_api_url_default', "https://fallback.example.com/api")
+
+# File Paths
+_file_paths_config = config_data.get('FilePaths', {})
+DEFAULT_NAMES_FILE = _file_paths_config.get('default_names_file', 'names.txt')
+
+# Selenium
+_selenium_config = config_data.get('Selenium', {})
+DEFAULT_IMPLICIT_WAIT = _selenium_config.get('default_implicit_wait', 10)
+DEFAULT_EXPLICIT_WAIT_TIMEOUT = _selenium_config.get('default_explicit_wait_timeout', 10)
+
 
 # --- 文件读取函数 ---
-def get_name_info_from_file(filepath='names.txt', delimiter='	'):
-    """
-    从文件中读取名称信息。
-    每行应包含由分隔符隔开的 first_name 和 last_name。
-    参数:
-        filepath (str): 名称文件的路径。
-        delimiter (str): 文件中使用的分隔符。
-    返回:
-        list: 字典列表，每个字典包含 'first_name' 和 'last_name'。
-    """
+# def get_name_info_from_file(filepath='names.txt', delimiter='	'):
+# 修改为使用配置的默认文件名
+def get_name_info_from_file(filepath=None, delimiter='	'):
+    actual_filepath = filepath if filepath is not None else DEFAULT_NAMES_FILE
+    # ... (函数其余部分不变，只是使用 actual_filepath) ...
     names_info_list = []
     try:
-        with open(filepath, "r", encoding='utf-8') as f: # 改为 utf-8，更通用
+        with open(actual_filepath, "r", encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -63,9 +86,9 @@ def get_name_info_from_file(filepath='names.txt', delimiter='	'):
                     }
                     names_info_list.append(name_info)
     except FileNotFoundError:
-        print(f"错误: 文件未找到 {filepath}")
+        print(f"错误: 文件未找到 {actual_filepath}")
     except Exception as e:
-        print(f"读取名称文件 {filepath} 时出错: {e}")
+        print(f"读取名称文件 {actual_filepath} 时出错: {e}")
     return names_info_list
 
 
@@ -484,11 +507,10 @@ def get_evm_balance(wallet_address, rpc_url=DEFAULT_EVM_RPC_URL, chain_id=DEFAUL
 
 
 if __name__ == '__main__':
-    # 示例用法 (可选, 用于直接测试库)
-    print("HubStudio Automated Control Library")
-    print("此文件旨在作为模块导入。")
-    print("如果直接运行此文件，可以在此处添加测试代码。")
-
+    print("HubStudio Automated Control Library - Now with externalized configuration!")
+    print(f"Default Chrome Driver Path: {DEFAULT_CHROMEDRIVER_PATH}")
+    print(f"Default EVM RPC URL: {DEFAULT_EVM_RPC_URL}")
+    # ... (可以添加更多测试打印)
     # 示例: 测试 get_text_content
     # with open("sample_text.txt", "w", encoding='utf-8') as f: # 确保编码一致
     #     f.write("你好\n世界\n\n  测试  \n")
