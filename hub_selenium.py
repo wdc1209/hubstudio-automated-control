@@ -45,9 +45,10 @@ HUBSTUDIO_BASE_URL = _hubstudio_config.get('base_api_url', "http://127.0.0.1:687
 
 # EVM
 _evm_config = config_data.get('EVM', {})
-INFURA_PROJECT_ID = os.getenv('INFURA_PROJECT_ID', "YOUR_FALLBACK_INFURA_ID_IF_NOT_IN_ENV") # 从.env获取
+INFURA_PROJECT_ID = os.getenv('INFURA_PROJECT_ID') # 从.env获取
 DEFAULT_EVM_RPC_URL_TEMPLATE = _evm_config.get('default_rpc_url_template', "https://sepolia.infura.io/v3/{INFURA_PROJECT_ID}")
 DEFAULT_EVM_RPC_URL = DEFAULT_EVM_RPC_URL_TEMPLATE.replace("{INFURA_PROJECT_ID}", INFURA_PROJECT_ID) # 动态构建
+print(f"DEBUG (hub_selenium.py): Effective DEFAULT_EVM_RPC_URL = {DEFAULT_EVM_RPC_URL}") # 添加调试打印
 DEFAULT_EVM_CHAIN_ID = _evm_config.get('default_chain_id', 11155111)
 DEFAULT_EVM_REQUEST_TIMEOUT_SECONDS = _evm_config.get('default_request_timeout_seconds', 30)
 

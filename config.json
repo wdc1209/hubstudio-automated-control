@@ -1,7 +1,7 @@
 {
   "GoogleSheets": {
     "default_scopes": ["https://www.googleapis.com/auth/spreadsheets"]
-    // "service_account_file_path_override": "" // 可选：如果不想用.env中的文件名，可以在这指定完整路径
+  
   },
   "HubStudio": {
     "default_extension_path": "C:\\Users\\Administrator\\AppData\\Roaming\\hubstudio-client\\UserExtension\\nkbihfbeogaeaoehlefnkodbefgpgknn\\11.7.4\\nkbihfbeogaeaoehlefnkodbefgpgknn.crx",
@@ -9,7 +9,7 @@
     "base_api_url": "http://127.0.0.1:6873/api/v1"
   },
   "EVM": {
-    "default_rpc_url_template": "https://sepolia.infura.io/v3/{INFURA_PROJECT_ID}", // 模板，ID从.env读取
+    "default_rpc_url_template": "https://sepolia.infura.io/v3/{INFURA_PROJECT_ID}", 
     "default_chain_id": 11155111,
     "default_request_timeout_seconds": 30
   },
@@ -18,7 +18,7 @@
   },
   "FilePaths": {
     "default_names_file": "names.txt"
-    // "default_accounts_file": "accounts_data.txt" // 示例
+  
   },
   "Selenium": {
     "default_implicit_wait": 10,
